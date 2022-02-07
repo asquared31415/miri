@@ -343,6 +343,27 @@ pub struct Evaluator<'mir, 'tcx> {
     /// functionality is encountered. If `false`, an error is propagated in the Miri application context
     /// instead (default behavior)
     pub(crate) panic_on_unsupported: bool,
+
+    pub(crate) platform_const_cache: FxHashMap<PlatformConstSym, Scalar<Tag>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PlatformConstSym {
+    UnixLibc(Symbol),
+    Windows(Symbol, Symbol),
+}
+
+impl PlatformConstSym {
+    pub fn new_unix(path: &str) -> Self {
+        let path_sym = Symbol::intern(path);
+        Self::UnixLibc(path_sym)
+    }
+
+    pub fn new_windows(module: &str, path: &str) -> Self {
+        let mod_sym = Symbol::intern(module);
+        let path_sym = Symbol::intern(path);
+        Self::Windows(mod_sym, path_sym)
+    }
 }
 
 impl<'mir, 'tcx> Evaluator<'mir, 'tcx> {
@@ -374,6 +395,7 @@ impl<'mir, 'tcx> Evaluator<'mir, 'tcx> {
             string_cache: Default::default(),
             exported_symbols_cache: FxHashMap::default(),
             panic_on_unsupported: config.panic_on_unsupported,
+            platform_const_cache: FxHashMap::default(),
         }
     }
 

@@ -18,6 +18,7 @@ use rustc_target::spec::abi::Abi;
 
 use rand::RngCore;
 
+use crate::machine::PlatformConstSym;
 use crate::*;
 
 impl<'mir, 'tcx: 'mir> EvalContextExt<'mir, 'tcx> for crate::MiriEvalContext<'mir, 'tcx> {}
@@ -47,6 +48,21 @@ fn try_resolve_did<'mir, 'tcx>(tcx: TyCtxt<'tcx>, path: &[&str]) -> Option<DefId
     )
 }
 
+fn get_cache_or_eval_scalar<'mir, 'tcx: 'mir>(
+    this: &mut impl crate::MiriEvalContextExt<'mir, 'tcx>,
+    platform_const: PlatformConstSym,
+    path: &[&str],
+) -> InterpResult<'tcx, Scalar<Tag>> {
+    let this = this.eval_context_mut();
+    if let Some(scalar) = this.machine.platform_const_cache.get(&platform_const) {
+        Ok(*scalar)
+    } else {
+        let scalar = this.eval_path_scalar(path)?;
+        this.machine.platform_const_cache.insert(platform_const, scalar);
+        Ok(scalar)
+    }
+}
+
 pub trait EvalContextExt<'mir, 'tcx: 'mir>: crate::MiriEvalContextExt<'mir, 'tcx> {
     /// Gets an instance for a path.
     fn resolve_path(&self, path: &[&str]) -> ty::Instance<'tcx> {
@@ -68,23 +84,25 @@ pub trait EvalContextExt<'mir, 'tcx: 'mir>: crate::MiriEvalContextExt<'mir, 'tcx
 
     /// Helper function to get a `libc` constant as a `Scalar`.
     fn eval_libc(&mut self, name: &str) -> InterpResult<'tcx, Scalar<Tag>> {
-        self.eval_context_mut().eval_path_scalar(&["libc", name])
+        let this = self.eval_context_mut();
+        let platform_const = PlatformConstSym::new_unix(name);
+        get_cache_or_eval_scalar(this, platform_const, &["libc", name])
     }
 
     /// Helper function to get a `libc` constant as an `i32`.
     fn eval_libc_i32(&mut self, name: &str) -> InterpResult<'tcx, i32> {
-        // TODO: Cache the result.
         self.eval_libc(name)?.to_i32()
     }
 
     /// Helper function to get a `windows` constant as a `Scalar`.
     fn eval_windows(&mut self, module: &str, name: &str) -> InterpResult<'tcx, Scalar<Tag>> {
-        self.eval_context_mut().eval_path_scalar(&["std", "sys", "windows", module, name])
+        let this = self.eval_context_mut();
+        let platform_const = PlatformConstSym::new_windows(module, name);
+        get_cache_or_eval_scalar(this, platform_const, &["std", "sys", "windows", module, name])
     }
 
     /// Helper function to get a `windows` constant as a `u64`.
     fn eval_windows_u64(&mut self, module: &str, name: &str) -> InterpResult<'tcx, u64> {
-        // TODO: Cache the result.
         self.eval_windows(module, name)?.to_u64()
     }
 
